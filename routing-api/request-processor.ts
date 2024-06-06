@@ -75,7 +75,6 @@ export class RequestProcessor {
         },
         body: JSON.stringify(request.body),
       })
-      // console.log({ res, response: await res.json(), request: request.body })
     } catch (error) {
       console.error('HttpRequestError', error)
     }

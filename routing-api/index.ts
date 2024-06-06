@@ -13,10 +13,7 @@ app.get('/', (_, res) => {
 })
 
 app.post('/', async (req, res) => {
-  console.time('RoundRobin')
   const resp = await requestProcessor.run(req)
-  console.timeEnd('RoundRobin')
-  console.log({ resp })
   res.send(resp)
 })
 

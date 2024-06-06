@@ -4,10 +4,13 @@ interface Instance {
   address: string;
   cursor: boolean;
   failCount: number;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'paused';
+  lastUsedAt?: Date;
 }
 
 export class RequestProcessor {
+  readonly FAIL_THRESHOLD = 3
+  readonly PAUSED_COOLDOWN = 1000 * 60 * 10 // 10 minutes
   instances: Instance[] = []
 
   constructor() {
@@ -15,7 +18,6 @@ export class RequestProcessor {
   }
 
   public async run(request: Request, tries: number = 0) {
-    // console.log('Before', { instances: this.instances })
     if (tries >= 3) {
       throw new Error('Max tries exceeded')
     }
@@ -36,14 +38,19 @@ export class RequestProcessor {
     }
 
     return res
-    // console.log('After', { instances: this.instances, address })
   }
 
   private getAddress(): string {
     let address: string | undefined
 
     this.instances.forEach((i, index) => {
-      if (i.cursor && i.status === 'active' && !address) {
+      if (i.cursor && !address) {
+        if (i.status === 'inactive'
+            || i.status === 'paused'
+            && (new Date().getTime() - i.lastUsedAt?.getTime()) < this.PAUSED_COOLDOWN
+        ) {
+          return
+        }
         this.setCursorToNext(index)
         address = i.address
       }
@@ -63,9 +70,17 @@ export class RequestProcessor {
     }
     instance.failCount += 1
 
-    if (instance.failCount >= 3) {
+    if (instance.failCount >= this.FAIL_THRESHOLD) {
       instance.status = 'inactive'
     }
+  }
+
+  private setPaused(address: string) {
+    const instance = this.instances.find(i => i.address === address)
+    if (!instance) {
+      throw new Error('Instance not found')
+    }
+    instance.status = 'paused'
   }
 
   private setCursorToNext(index: number) {
@@ -102,6 +117,7 @@ export class RequestProcessor {
   }
 
   private async request(address: string, request: Request) {
+    const start = new Date().getTime()
     const res = await fetch(`http://${address}`, {
       method: 'POST',
       headers: {
@@ -109,6 +125,13 @@ export class RequestProcessor {
       },
       body: JSON.stringify(request.body),
     })
+
+    const end = new Date().getTime()
+    const duration = end - start
+    if (duration > 1000) {
+      this.setPaused(address)
+    }
+
     return res.json()
   }
 }
